@@ -1,0 +1,76 @@
+BasicInfo:
+  Title                   : spi
+  CompanyCode             : "00"
+  ProductCode             : lennybuilder # I'll join the lennys
+  ContentType             : Application
+  Logo                    : None
+
+TitleInfo:
+  UniqueId                : 0x23
+  Category                : Base
+  Version                 : 2
+
+Option:
+  UseOnSD                 : false
+  FreeProductCode         : true # Removes limitations on ProductCode
+  MediaFootPadding        : false # If true CCI files are created with padding
+  EnableCrypt             : false # Enables encryption for NCCH and CIA
+  EnableCompress          : true # Compresses exefs code
+
+AccessControlInfo:
+  IdealProcessor                : 1
+  AffinityMask                  : 2
+
+  Priority                      : -12
+
+  DisableDebug                  : true
+  EnableForceDebug              : false
+  CanWriteSharedPage            : false
+  CanUsePrivilegedPriority      : false
+  CanUseNonAlphabetAndNumber    : false
+  PermitMainFunctionArgument    : false
+  CanShareDeviceMemory          : false
+  RunnableOnSleep               : true
+  SpecialMemoryArrange          : false
+  ResourceLimitCategory         : Other
+
+  CoreVersion                   : 2
+  DescVersion                   : 2
+
+  MemoryType                    : Base      # Application / System / Base
+  HandleTableSize: 0
+
+  MemoryMapping:
+    - 0x1EC40000 # CFG11
+    # originally PDN was set but unused
+
+  IORegisterMapping:
+    - 0x1EC60000 # device id >= 0 && < 3
+    - 0x1EC42000 # device id >= 3 && < 6
+    - 0x1EC43000 # device id == 6, not originally mapped
+
+  SystemCallAccess:
+    ExitProcess: 3
+    CreateThread: 8
+    ExitThread: 9
+    SleepThread: 10
+    CreateAddressArbiter: 33
+    ArbitrateAddress: 34
+    CloseHandle: 35
+    WaitSynchronization1: 36
+    GetSystemTick: 40
+    ConnectToPort: 45
+    SendSyncRequest: 50
+    GetProcessId: 53
+    Break: 60
+    AcceptSession: 74
+    ReplyAndReceive: 79
+
+  InterruptNumbers:
+  ServiceAccessControl:
+  FileSystemAccess:
+
+SystemControlInfo:
+  SaveDataSize: 0KB # It doesn't use any save data.
+  RemasterVersion: 0
+  StackSize: 0x1000
