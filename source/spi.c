@@ -540,81 +540,29 @@ static void SPI_IPCSession() {
 	}
 }
 
-static void SPIThread(void* _service_name) {
-	const char* service_name = (const char*)_service_name;
+static void SPIThread(void* _session_handle) {
+	Handle session_handle = (Handle)_session_handle;
 
-	const s32 SERVICE_COUNT = 1;
-	const s32 INDEX_MAX = 2;
-	const s32 REMOTE_SESSION_INDEX = SERVICE_COUNT;
-
-	s32 handle_count = 1;
-
-	Handle session_handles[2];
-
-	Err_FailedThrow(srvRegisterService(&session_handles[0], service_name, 1));
-
-	Handle target = 0;
-	s32 target_index = -1;
+	*getThreadCommandBuffer() = 0xFFFF0000;
 	for (;;) {
 		s32 index;
 
-		if (!target) {
-			if (TerminationFlag && handle_count == REMOTE_SESSION_INDEX)
-				break;
-			else
-				*getThreadCommandBuffer() = 0xFFFF0000;
-		}
-
-		Result res = svcReplyAndReceive(&index, session_handles, handle_count, target);
-		s32 last_target_index = target_index;
-		target = 0;
-		target_index = -1;
+		Result res = svcReplyAndReceive(&index, &session_handle, 1, session_handle);
 
 		if (R_FAILED(res)) {
-
 			if (res != OS_REMOTE_SESSION_CLOSED)
 				Err_Throw(res);
 
-			else if (index == -1) {
-				if (last_target_index == -1)
-					Err_Throw(SPI_CANCELED_RANGE);
-				else
-					index = last_target_index;
-			}
-
-			else if (index >= handle_count)
-				Err_Throw(SPI_CANCELED_RANGE);
-
-			svcCloseHandle(session_handles[index]);
-
-			handle_count--;
-
-			continue;
+			break;
 		}
 
-		if (index == 0) {
-			Handle newsession = 0;
-			Err_FailedThrow(svcAcceptSession(&newsession, session_handles[index]));
-
-			if (handle_count >= INDEX_MAX) {
-				svcCloseHandle(newsession);
-				continue;
-			}
-
-			session_handles[handle_count] = newsession;
-			handle_count++;
-
-		} else if (index >= REMOTE_SESSION_INDEX && index < INDEX_MAX) {
-			SPI_IPCSession();
-			target = session_handles[index];
-			target_index = index;
-		} else {
+		if (index != 0)
 			Err_Throw(SPI_INTERNAL_RANGE);
-		}
+
+		SPI_IPCSession();
 	}
 
-	Err_FailedThrow(srvUnregisterService(service_name));
-	svcCloseHandle(session_handles[0]);
+	svcCloseHandle(session_handle);
 }
 
 static inline void initBSS() {
@@ -640,38 +588,65 @@ void SPIMain() {
 
 	LoadSPICFGStatus();
 
+	Handle service_handles[6];
+
 	Handle thread_handles[5];
-	Handle notification_handle;
+	_memset32_aligned(thread_handles, 0, sizeof(thread_handles));
 
 	static const char* const service_names[] = {"SPI::NOR", "SPI::CD2", "SPI::CS2", "SPI::CS3", "SPI::DEF"};
 
 	Err_FailedThrow(srvInit());
 
-	Err_FailedThrow(srvEnableNotification(&notification_handle));
+	Err_FailedThrow(srvEnableNotification(&service_handles[0]));
+	for (int i = 0; i < 5; ++i)
+		Err_FailedThrow(srvRegisterService(&service_handles[i+1], service_names[i], 1));
 
-	// we will make all the threads now and have them control the service name handle
-	for (int i = 0; i < 5; ++i) {
+	while (!TerminationFlag) {
+		s32 index;
+		Err_FailedThrow(svcWaitSynchronizationN(&index, service_handles, 6, false, U64_MAX));
+
+		if (index < 0 || index > 5)
+			Err_Panic(SPI_INTERNAL_RANGE);
+		if (index == 0) {
+			HandleSRVNotification();
+			continue;
+		}
+
+		Handle session_handle;
+		Err_FailedThrow(svcAcceptSession(&session_handle, service_handles[index]));
+
+		--index;
+
+		if (thread_handles[index]) {
+			Err_NonSuccessThrow(svcWaitSynchronization(thread_handles[index], U64_MAX));
+			svcCloseHandle(thread_handles[index]);
+			thread_handles[index] = 0;
+		}
+
 		s32 priority = 20;
 		s32 processor_id = -2;
 
-		if (i == 1 && IS_SOCINFO_LGR2_SET) { // n3ds specific, for SPI::CD2 only
+		if (index == 1 && IS_SOCINFO_LGR2_SET) { // n3ds specific, for SPI::CD2 only
 			priority = 15;
 			processor_id = 3;
 		}
 
-		Err_FailedThrow(StartThread(&thread_handles[i], SPIThread, (void*)service_names[i], _thread_stack_sp_top_offset - i * 0x280, priority, processor_id));
-	}
-
-	while (!TerminationFlag) {
-		svcWaitSynchronization(notification_handle, U64_MAX);
-		HandleSRVNotification();
+		Err_FailedThrow(StartThread(&thread_handles[index], SPIThread, (void*)session_handle, _thread_stack_sp_top_offset - index * 0x280, priority, processor_id));
 	}
 
 	for (int i = 0; i < 5; ++i) {
-		svcWaitSynchronization(thread_handles[i], U64_MAX);
+		if (thread_handles[i]) {
+			Err_NonSuccessThrow(svcWaitSynchronization(thread_handles[i], U64_MAX));
+			svcCloseHandle(thread_handles[i]);
+		}
 	}
 
-	svcCloseHandle(notification_handle);
+	for (int i = 0; i < 5; ++i) {
+		Err_FailedThrow(srvUnregisterService(service_names[i]));
+		svcCloseHandle(service_handles[i+1]);
+	}
+
+	svcCloseHandle(service_handles[0]);
 
 	srvExit();
 	__sync_fini();

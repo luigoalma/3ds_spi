@@ -8,4 +8,6 @@
 
 #define Err_FailedThrow(failure) do {Result __tmp = failure; if (R_FAILED(__tmp)) Err_Throw(__tmp);} while(0)
 
+#define Err_NonSuccessThrow(failure) do {Result __tmp = failure; if (R_LEVEL(__tmp) != RL_SUCCESS) Err_Throw(__tmp);} while(0)
+
 #define Err_Panic(failure) do { Result __tmp = failure; if (!R_FAILED(__tmp)) {break;} while(1) { svcBreak(USERBREAK_PANIC); } } while(0)
